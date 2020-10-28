@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
@@ -25,7 +26,7 @@ namespace SteamDatabaseBackend
 
         static Application()
         {
-            Path = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName);
+            Path = System.IO.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
         }
 
         public static async Task Init()
