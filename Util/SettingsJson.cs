@@ -55,18 +55,12 @@ namespace SteamDatabaseBackend
 
             [JsonProperty(Required = Required.Always)]
             public IrcChannelsJson Channel = new IrcChannelsJson();
-
-            [JsonProperty(Required = Required.Always)]
-            public string PrioritySendPrefix;
         }
 
         public sealed class IrcChannelsJson
         {
             [JsonProperty(Required = Required.Always)]
             public string Ops;
-
-            [JsonProperty(Required = Required.Always)]
-            public string Main;
 
             [JsonProperty(Required = Required.Always)]
             public string Announce;
@@ -90,6 +84,9 @@ namespace SteamDatabaseBackend
         [JsonProperty(Required = Required.Always)]
         public Uri RawBaseURL;
 
+        [JsonProperty(Required = Required.Default)]
+        public Uri WebhookURL;
+
         [JsonProperty(Required = Required.Always)]
         public string ConnectionString;
 
@@ -101,6 +98,9 @@ namespace SteamDatabaseBackend
 
         [JsonProperty(Required = Required.Always)]
         public bool OnlyOwnedDepots;
+
+        [JsonProperty(Required = Required.Always)]
+        public uint BuiltInHttpServerPort;
     }
 #pragma warning restore 0649
 }

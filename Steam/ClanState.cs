@@ -39,7 +39,17 @@ namespace SteamDatabaseBackend
 
             foreach (var announcement in callback.Announcements)
             {
-                IRC.Instance.SendMain($"{Colors.BLUE}{groupName}{Colors.NORMAL} announcement: {Colors.OLIVE}{announcement.Headline}{Colors.NORMAL} -{Colors.DARKBLUE} https://steamcommunity.com/gid/{callback.ClanID.AccountID}/announcements/detail/{announcement.ID}");
+                var url = $"https://steamcommunity.com/gid/{callback.ClanID.AccountID}/announcements/detail/{announcement.ID}";
+
+                IRC.Instance.SendAnnounce($"{Colors.BLUE}{groupName}{Colors.NORMAL} announcement: {Colors.OLIVE}{announcement.Headline}{Colors.NORMAL} -{Colors.DARKBLUE} {url}");
+
+                _ = TaskManager.Run(async () => await Utils.SendWebhook(new
+                {
+                    Type = "GroupAnnouncement",
+                    Title = announcement.Headline,
+                    Group = groupName,
+                    Url = url,
+                }));
 
                 Log.WriteInfo(nameof(ClanState), $"{groupName} \"{announcement.Headline}\"");
             }
@@ -56,13 +66,22 @@ namespace SteamDatabaseBackend
                     continue;
                 }
 
-                IRC.Instance.SendMain(
+                IRC.Instance.SendAnnounce(
                     $"{Colors.BLUE}{groupName}{Colors.NORMAL} event: {Colors.OLIVE}{groupEvent.Headline}{Colors.NORMAL} -{Colors.DARKBLUE} {link} {Colors.DARKGRAY}({groupEvent.EventTime.ToString("s", CultureInfo.InvariantCulture).Replace("T", " ")})"
                 );
 
                 Log.WriteInfo(nameof(ClanState), $"{groupName} Event \"{groupEvent.Headline}\" {link}");
 
                 await db.ExecuteAsync("INSERT INTO `RSS` (`Link`, `Title`) VALUES(@Link, @Title)", new { Link = link, Title = groupEvent.Headline });
+
+                _ = TaskManager.Run(async () => await Utils.SendWebhook(new
+                {
+                    Type = "GroupAnnouncement",
+                    Title = groupEvent.Headline,
+                    Group = groupName,
+                    Url = link,
+                }));
+
             }
         }
     }

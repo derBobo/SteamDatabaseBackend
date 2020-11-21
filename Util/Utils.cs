@@ -12,6 +12,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using SteamKit2;
 
@@ -114,21 +115,44 @@ namespace SteamDatabaseBackend
             return sw.ToString();
         }
 
+        public static async Task SendWebhook(object payload)
+        {
+            if (Settings.Current.WebhookURL == null)
+            {
+                return;
+            }
+
+            var json = JsonConvert.SerializeObject(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            try
+            {
+                var result = await HttpClient.PostAsync(Settings.Current.WebhookURL, content);
+                var output = await result.Content.ReadAsStringAsync();
+
+                Log.WriteDebug("Webhook", $"Result: {output}");
+            }
+            catch (Exception e)
+            {
+                ErrorReporter.Notify("Webhook", e);
+            }
+        }
+
         private static void JsonifyKeyValue(JsonWriter w, List<KeyValue> keys)
         {
             w.WriteStartObject();
 
             foreach (var keyval in keys)
             {
-                if (keyval.Children.Count > 0)
-                {
-                    w.WritePropertyName(keyval.Name);
-                    JsonifyKeyValue(w, keyval.Children);
-                }
-                else if (keyval.Value != null) // TODO: Should we be writing null keys anyway?
+                if (keyval.Value != null)
                 {
                     w.WritePropertyName(keyval.Name);
                     w.WriteValue(keyval.Value);
+                }
+                else
+                {
+                    w.WritePropertyName(keyval.Name);
+                    JsonifyKeyValue(w, keyval.Children);
                 }
             }
 

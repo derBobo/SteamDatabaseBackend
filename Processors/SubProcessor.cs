@@ -225,13 +225,13 @@ namespace SteamDatabaseBackend
                     {
                         var keyName = $"{sectionName}_{children.Name}";
 
-                        if (children.Children.Count > 0)
+                        if (children.Value != null)
                         {
-                            await ProcessKey(keyName, children.Name, Utils.JsonifyKeyValue(children), true);
+                            await ProcessKey(keyName, children.Name, children.Value);
                         }
                         else
                         {
-                            await ProcessKey(keyName, children.Name, children.Value);
+                            await ProcessKey(keyName, children.Name, Utils.JsonifyKeyValue(children), true);
                         }
                     }
                 }
@@ -262,17 +262,17 @@ namespace SteamDatabaseBackend
 
                     await ProcessKey(sectionName, sectionName, Utils.JsonifyKeyValue(fixedAppItems), true);
                 }
-                else if (section.Children.Count > 0)
+                else if (section.Value != null)
+                {
+                    sectionName = $"root_{sectionName}";
+
+                    await ProcessKey(sectionName, sectionName, section.Value);
+                }
+                else if (section.Children.Count > 0) // Check count so we don't store empty appitems
                 {
                     sectionName = $"root_{sectionName}";
 
                     await ProcessKey(sectionName, sectionName, Utils.JsonifyKeyValue(section), true);
-                }
-                else if (!string.IsNullOrEmpty(section.Value))
-                {
-                    var keyName = $"root_{sectionName}";
-
-                    await ProcessKey(keyName, sectionName, section.Value);
                 }
             }
 

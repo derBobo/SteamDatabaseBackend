@@ -67,7 +67,7 @@ namespace SteamDatabaseBackend
                 "SELECT `ConfigKey`, `Value` FROM `LocalConfig` WHERE `ConfigKey` IN ('backend.sentryhash', 'backend.loginkey')"
             )).ToDictionary(x => x.Item1, x => x.Item2);
 
-            Log.WriteInfo(nameof(Steam), $"Connected, logging in...");
+            Log.WriteInfo(nameof(Steam), "Connected, logging in...");
 
             if (Settings.Current.Steam.Username == "anonymous")
             {
@@ -105,8 +105,6 @@ namespace SteamDatabaseBackend
             
             Log.WriteInfo(nameof(Steam), $"Disconnected from Steam. Retrying in {RETRY_DELAY} seconds... {(callback.UserInitiated ? " (user initiated)" : "")}");
 
-            IRC.Instance.SendEmoteAnnounce($"disconnected from Steam. Retrying in {RETRY_DELAY} seconds…");
-
             ReconnectionTimer.Start();
         }
 
@@ -141,16 +139,12 @@ namespace SteamDatabaseBackend
             {
                 Log.WriteInfo(nameof(Steam), $"Failed to login: {callback.Result}");
 
-                IRC.Instance.SendEmoteAnnounce($"failed to log in: {callback.Result}");
-
                 return;
             }
 
             LastSuccessfulLogin = DateTime.Now;
 
             Log.WriteInfo(nameof(Steam), $"Logged in, current Valve time is {callback.ServerTime:R}");
-
-            IRC.Instance.SendEmoteAnnounce($"logged in. Valve time: {callback.ServerTime:R}");
 
             await Steam.Instance.DepotProcessor.UpdateContentServerList();
 
@@ -171,8 +165,6 @@ namespace SteamDatabaseBackend
         private void OnLoggedOff(SteamUser.LoggedOffCallback callback)
         {
             Log.WriteInfo(nameof(Steam), $"Logged out of Steam: {callback.Result}");
-
-            IRC.Instance.SendEmoteAnnounce($"logged out of Steam: {callback.Result}");
         }
 
         private async void OnMachineAuth(SteamUser.UpdateMachineAuthCallback callback)
@@ -187,14 +179,14 @@ namespace SteamDatabaseBackend
             byte[] sentryHash;
             int sentryFileSize;
 
-            using (var stream = new MemoryStream(callback.BytesToWrite))
+            await using (var stream = new MemoryStream(callback.BytesToWrite))
             {
                 stream.Seek(callback.Offset, SeekOrigin.Begin);
                 stream.Write(callback.Data, 0, callback.BytesToWrite);
                 stream.Seek(0, SeekOrigin.Begin);
                 
                 using var sha = SHA1.Create();
-                sentryHash = sha.ComputeHash(stream);
+                sentryHash = await sha.ComputeHashAsync(stream);
                 sentryFileSize = (int)stream.Length;
             }
 

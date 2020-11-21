@@ -3,10 +3,12 @@
 
 	"RawBaseURL": "http://example.com/raw/",
 	"BaseURL": "http://example.com",
+	"WebhookURL": "",
 	
 	"FullRun": 0,
 	"LogToFile": true,
 	"OnlyOwnedDepots": true,
+	"BuiltInHttpServerPort": 0,
 	
 	"Steam":
 	{
@@ -24,11 +26,9 @@
 		"Nickname": "SteamDB-Fork",
 		"Password": "",
 		"CommandPrefix": ".",
-		"PrioritySendPrefix":  "",
 		"Channel":
 		{
 			"Ops": "#steamdb-test",
-			"Main": "#steamdb-test",
 			"Announce": "#steamdb-test"
 		},
 		"Admins":

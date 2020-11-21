@@ -69,7 +69,6 @@ namespace SteamDatabaseBackend
                 return;
             }
 
-            SendEmoteAnnounce("is exiting…");
             Client.LogOut();
             Client.Close();
         }
@@ -85,7 +84,6 @@ namespace SteamDatabaseBackend
 
             Client.LogIn(Settings.Current.IRC.Nickname, Settings.Current.BaseURL.AbsoluteUri, Settings.Current.IRC.Nickname, "4", null, Settings.Current.IRC.Password);
             Client.Join(Settings.Current.IRC.Channel.Ops);
-            Client.Join(Settings.Current.IRC.Channel.Main);
             Client.Join(Settings.Current.IRC.Channel.Announce);
         }
 
@@ -102,10 +100,9 @@ namespace SteamDatabaseBackend
 
         private void OnError(object sender, IrcErrorEventArgs e)
         {
-            switch (e.Error)
+            if (e.Error == IrcReplyCode.MissingMOTD)
             {
-                case IrcReplyCode.MissingMOTD:
-                    return;
+                return;
             }
 
             Log.WriteError(nameof(IRC), $"Error: {e.Error} ({string.Join(", ", e.Data.Parameters)})");
@@ -116,13 +113,13 @@ namespace SteamDatabaseBackend
             if (notice)
             {
                 // Reset formatting since some clients might put notices in a different color
-                message = $"{Settings.Current.IRC.PrioritySendPrefix}{Colors.NORMAL}{message}";
+                message = $"{Colors.NORMAL}{message}";
 
                 Client.Notice(recipient, message);
             }
             else
             {
-                Client.Message(recipient, string.Concat(Settings.Current.IRC.PrioritySendPrefix, message));
+                Client.Message(recipient, message);
             }
         }
 
@@ -134,19 +131,11 @@ namespace SteamDatabaseBackend
             }
         }
 
-        public void SendMain(string str)
-        {
-            if (Settings.Current.IRC.Enabled)
-            {
-                Client.Message(Settings.Current.IRC.Channel.Main, string.Concat(Settings.Current.IRC.PrioritySendPrefix, str));
-            }
-        }
-
         public void SendOps(string str)
         {
             if (Settings.Current.IRC.Enabled)
             {
-                Client.Message(Settings.Current.IRC.Channel.Ops, string.Concat(Settings.Current.IRC.PrioritySendPrefix, str));
+                Client.Message(Settings.Current.IRC.Channel.Ops, str);
             }
         }
 
@@ -157,34 +146,6 @@ namespace SteamDatabaseBackend
             {
                 Client.Message("#steamlug", message);
                 Client.Message("#gamingonlinux", message);
-            }
-        }
-
-        public void SendEmoteAnnounce(string str)
-        {
-            if (Settings.Current.IRC.Enabled)
-            {
-                Client.ChatAction(Settings.Current.IRC.Channel.Announce, str);
-            }
-        }
-
-        public void AnnounceImportantAppUpdate(uint appID, string str)
-        {
-            if (!Settings.Current.IRC.Enabled)
-            {
-                return;
-            }
-
-            if (!Application.ImportantApps.TryGetValue(appID, out var channels))
-            {
-                return;
-            }
-
-            str = string.Concat(Settings.Current.IRC.PrioritySendPrefix, str);
-
-            foreach (var channel in channels)
-            {
-                Client.Message(channel, str);
             }
         }
 

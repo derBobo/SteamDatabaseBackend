@@ -153,13 +153,14 @@ namespace SteamDatabaseBackend
                             continue;
                         }
 
-                        if (keyvalue.Children.Count > 0)
-                        {
-                            await ProcessKey(keyName, keyvalue.Name, Utils.JsonifyKeyValue(keyvalue), keyvalue);
-                        }
-                        else if (!string.IsNullOrEmpty(keyvalue.Value))
+                        if (keyvalue.Value != null)
                         {
                             await ProcessKey(keyName, keyvalue.Name, keyvalue.Value);
+                            
+                        }
+                        else
+                        {
+                            await ProcessKey(keyName, keyvalue.Name, Utils.JsonifyKeyValue(keyvalue), keyvalue);
                         }
                     }
                 }

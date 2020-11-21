@@ -92,9 +92,16 @@ namespace SteamDatabaseBackend
             {
                 Log.WriteInfo(nameof(RSS), $"[{feed.Title}] {item.Title}: {item.Link}");
 
-                IRC.Instance.SendMain($"{Colors.BLUE}{feed.Title}{Colors.NORMAL}: {item.Title} -{Colors.DARKBLUE} {item.Link}");
+                IRC.Instance.SendAnnounce($"{Colors.BLUE}{feed.Title}{Colors.NORMAL}: {item.Title} -{Colors.DARKBLUE} {item.Link}");
 
                 await db.ExecuteAsync("INSERT INTO `RSS` (`Link`, `Title`) VALUES(@Link, @Title)", new { item.Link, item.Title });
+
+                _ = TaskManager.Run(async () => await Utils.SendWebhook(new
+                {
+                    Type = "RSS",
+                    item.Title,
+                    Url = item.Link,
+                }));
 
                 if (!Settings.IsMillhaven)
                 {
@@ -200,7 +207,7 @@ namespace SteamDatabaseBackend
                         }
                     );
 
-                    IRC.Instance.SendMain($"\u2699 Official patch notes:{Colors.BLUE} {Steam.GetAppName(build.AppID)}{Colors.NORMAL} -{Colors.DARKBLUE} {SteamDB.GetPatchnotesUrl(build.BuildID)}");
+                    IRC.Instance.SendAnnounce($"\u2699 Official patch notes:{Colors.BLUE} {Steam.GetAppName(build.AppID)}{Colors.NORMAL} -{Colors.DARKBLUE} {SteamDB.GetPatchnotesUrl(build.BuildID)}");
                 }
             }
         }
