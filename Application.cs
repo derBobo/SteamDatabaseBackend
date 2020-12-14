@@ -59,7 +59,7 @@ namespace SteamDatabaseBackend
 
                 IrcThread = new Thread(IRC.Instance.Connect)
                 {
-                    Name = "IRC"
+                    Name = nameof(IRC)
                 };
                 IrcThread.Start();
 

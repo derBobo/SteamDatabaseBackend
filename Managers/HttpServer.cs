@@ -24,7 +24,10 @@ namespace SteamDatabaseBackend
             HttpListener = new HttpListener();
             HttpListener.Prefixes.Add($"http://localhost:{port}/");
 
-            ServerThread = new Thread(ListenAsync);
+            ServerThread = new Thread(ListenAsync)
+            {
+                Name = nameof(HttpServer)
+            };
             ServerThread.Start();
         }
 
@@ -95,6 +98,10 @@ namespace SteamDatabaseBackend
                         await ReloadTokens(context);
                         break;
 
+                    case "/ReloadImportant":
+                        await ReloadImportant(context);
+                        break;
+
                     default:
                         context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                         break;
@@ -163,6 +170,13 @@ namespace SteamDatabaseBackend
             await PICSTokens.Reload();
 
             await WriteJsonResponse("Tokens reloaded", context.Response);
+        }
+
+        private static async Task ReloadImportant(HttpListenerContext context)
+        {
+            await Application.ReloadImportant();
+
+            await WriteJsonResponse("Important lists reloaded", context.Response);
         }
     }
 }

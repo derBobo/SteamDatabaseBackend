@@ -48,11 +48,11 @@ namespace SteamDatabaseBackend
                 return;
             }
 
-            List<string> keys;
+            List<SteamKeyRow> keys;
 
             await using (var db = await Database.GetConnectionAsync())
             {
-                keys = (await db.QueryAsync<string>($"SELECT `SteamKey` FROM `SteamKeys` WHERE `Result` IN (-1,{(int)EPurchaseResultDetail.RateLimited}) ORDER BY `ID` ASC LIMIT 25")).ToList();
+                keys = (await db.QueryAsync<SteamKeyRow>($"SELECT `ID`, `SteamKey` FROM `SteamKeys` WHERE `Result` IN (-1,{(int)EPurchaseResultDetail.RateLimited}) ORDER BY `ID` ASC LIMIT 25")).ToList();
             }
 
             if (keys.Count == 0)
@@ -64,7 +64,7 @@ namespace SteamDatabaseBackend
 
             foreach (var key in keys)
             {
-                var result = await ActivateKey(key);
+                var result = await ActivateKey(key.SteamKey, key.ID);
 
                 if (result == EPurchaseResultDetail.RateLimited)
                 {
@@ -98,7 +98,7 @@ namespace SteamDatabaseBackend
             command.Reply(result.ToString());
         }
 
-        private async Task<EPurchaseResultDetail> ActivateKey(string key)
+        private async Task<EPurchaseResultDetail> ActivateKey(string key, uint id = 0)
         {
             var msg = new ClientMsgProtobuf<CMsgClientRegisterKey>(EMsg.ClientRegisterKey)
             {
@@ -121,23 +121,27 @@ namespace SteamDatabaseBackend
             {
                 return EPurchaseResultDetail.Timeout;
             }
+            
+            await using var db = await Database.GetConnectionAsync();
 
-            await using (var db = await Database.GetConnectionAsync())
+            if (id > 0)
             {
                 using var sha = SHA1.Create();
-                await db.ExecuteAsync("UPDATE `SteamKeys` SET `SteamKey` = @HashedKey, `SubID` = @SubID, `Result` = @PurchaseResultDetail WHERE `SteamKey` = @SteamKey OR `SteamKey` = @HashedKey",
+                await db.ExecuteAsync(
+                    "UPDATE `SteamKeys` SET `SteamKey` = @HashedKey, `SubID` = @SubID, `Result` = @Result WHERE `ID` = @ID",
                     new
                     {
-                        job.PurchaseResultDetail,
+                        ID = id,
+                        Result = job.PurchaseResultDetail,
                         SubID = job.Packages.Count > 0 ? (int)job.Packages.First().Key : -1,
-                        SteamKey = key,
                         HashedKey = Utils.ByteArrayToString(sha.ComputeHash(Encoding.ASCII.GetBytes(key)))
                     });
             }
 
             if (job.Packages.Count == 0)
             {
-                if (job.PurchaseResultDetail != EPurchaseResultDetail.BadActivationCode)
+                if (job.PurchaseResultDetail != EPurchaseResultDetail.BadActivationCode
+                && job.PurchaseResultDetail != EPurchaseResultDetail.RestrictedCountry)
                 {
                     IRC.Instance.SendOps($"{Colors.GREEN}[Keys]{Colors.NORMAL} Key not activated:{Colors.OLIVE} {job.Result} - {job.PurchaseResultDetail}");
                 }
@@ -149,36 +153,38 @@ namespace SteamDatabaseBackend
             && job.PurchaseResultDetail != EPurchaseResultDetail.DuplicateActivationCode
             && job.PurchaseResultDetail != EPurchaseResultDetail.DoesNotOwnRequiredApp)
             {
-                var response = job.PurchaseResultDetail == EPurchaseResultDetail.NoDetail ?
-                    $"{Colors.GREEN}Key activated" : $"{Colors.BLUE}{job.PurchaseResultDetail}";
-
-                IRC.Instance.SendOps($"{Colors.GREEN}[Keys]{Colors.NORMAL} {response}{Colors.NORMAL}. Packages:{Colors.OLIVE} {string.Join(", ", job.Packages.Select(x => $"{x.Key}: {x.Value}"))}");
+                _ = TaskManager.Run(async () => await Utils.SendWebhook(new
+                {
+                    Type = "KeyActivated",
+                    Key = id,
+                    job.Result,
+                    job.PurchaseResultDetail,
+                    job.Packages,
+                    ResultString = job.PurchaseResultDetail.ToString(),
+                }));
             }
 
-            await using (var db = await Database.GetConnectionAsync())
+            foreach (var (subid, name) in job.Packages)
             {
-                foreach (var (subid, name) in job.Packages)
+                var databaseName = (await db.QueryAsync<string>("SELECT `LastKnownName` FROM `Subs` WHERE `SubID` = @SubID", new { SubID = subid })).FirstOrDefault() ?? string.Empty;
+
+                if (databaseName.Equals(name, StringComparison.CurrentCultureIgnoreCase))
                 {
-                    var databaseName = (await db.QueryAsync<string>("SELECT `LastKnownName` FROM `Subs` WHERE `SubID` = @SubID", new { SubID = subid })).FirstOrDefault() ?? string.Empty;
-
-                    if (databaseName.Equals(name, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    await db.ExecuteAsync("UPDATE `Subs` SET `LastKnownName` = @Name WHERE `SubID` = @SubID", new { SubID = subid, Name = name });
-
-                    await db.ExecuteAsync(SubProcessor.HistoryQuery,
-                        new PICSHistory
-                        {
-                            ID = subid,
-                            Key = SteamDB.DatabaseNameType,
-                            OldValue = "key activation",
-                            NewValue = name,
-                            Action = "created_info"
-                        }
-                    );
+                    continue;
                 }
+
+                await db.ExecuteAsync("UPDATE `Subs` SET `LastKnownName` = @Name WHERE `SubID` = @SubID", new { SubID = subid, Name = name });
+
+                await db.ExecuteAsync(SubProcessor.HistoryQuery,
+                    new PICSHistory
+                    {
+                        ID = subid,
+                        Key = SteamDB.DatabaseNameType,
+                        OldValue = "key activation",
+                        NewValue = name,
+                        Action = "created_info"
+                    }
+                );
             }
 
             return job.PurchaseResultDetail;
