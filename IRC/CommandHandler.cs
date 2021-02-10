@@ -22,7 +22,6 @@ namespace SteamDatabaseBackend
         {
             RegisteredCommands = new List<Command>
             {
-                new BlogCommand(),
                 new PlayersCommand(),
                 new AppCommand(),
                 new PackageCommand(),
@@ -34,14 +33,11 @@ namespace SteamDatabaseBackend
                 new EnumCommand(),
                 new ServersCommand(),
                 new BinariesCommand(),
-                new ImportantCommand(),
-                new ReloginCommand(),
             };
 
             if (Settings.IsMillhaven)
             {
                 RegisteredCommands.Add(new QueueCommand());
-                RegisteredCommands.Add(new KeyCommand());
             }
 
             // Register help command last so we can pass the list of the commands
@@ -112,14 +108,6 @@ namespace SteamDatabaseBackend
                 return;
             }
 
-            var ident = $"{e.Sender.Username}@{e.Sender.Hostname}";
-            commandData.IsUserAdmin = Settings.Current.IRC.Admins.Contains(ident);
-
-            if (command.IsAdminCommand && !commandData.IsUserAdmin)
-            {
-                return;
-            }
-
             Log.WriteInfo(nameof(CommandHandler), $"Handling IRC command \"{Utils.RemoveControlCharacters(Colors.StripColors(message))}\" for {commandData}");
 
             TryCommand(command, commandData);
@@ -162,14 +150,6 @@ namespace SteamDatabaseBackend
             }
 
             commandData.Message = i == -1 ? string.Empty : message.Substring(i).Trim();
-            commandData.IsUserAdmin = Settings.Current.SteamAdmins.Contains(commandData.SenderID.ConvertToUInt64());
-
-            if (command.IsAdminCommand && !commandData.IsUserAdmin)
-            {
-                commandData.Reply("You're not an admin!");
-
-                return;
-            }
 
             TryCommand(command, commandData);
         }
