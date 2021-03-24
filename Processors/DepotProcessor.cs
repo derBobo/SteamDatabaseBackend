@@ -329,11 +329,6 @@ namespace SteamDatabaseBackend
 
         private static async Task GetDepotDecryptionKey(SteamApps instance, ManifestJob depot, uint appID)
         {
-            if (!LicenseList.OwnedApps.ContainsKey(depot.DepotID))
-            {
-                return;
-            }
-
             var task = instance.GetDepotDecryptionKey(depot.DepotID, appID);
             task.Timeout = TimeSpan.FromMinutes(15);
 
@@ -380,11 +375,16 @@ namespace SteamDatabaseBackend
 
             foreach (var depot in depots)
             {
+                if (Settings.Current.OnlyOwnedDepots && !LicenseList.OwnedDepots.ContainsKey(depot.DepotID))
+                {
+                    continue;
+                }
+
                 if (depot.DepotKey == null)
                 {
                     await GetDepotDecryptionKey(Steam.Instance.Apps, depot, appID);
 
-                    if (depot.DepotKey == null && (depot.LastManifestID == depot.ManifestID || Settings.Current.OnlyOwnedDepots))
+                    if (depot.DepotKey == null && depot.LastManifestID == depot.ManifestID)
                     {
                         RemoveLock(depot.DepotID);
 
@@ -617,6 +617,8 @@ namespace SteamDatabaseBackend
                         OldFile = oldFile
                     }, transaction);
                 }
+                
+                await MakeHistory(db, transaction, request, string.Empty, "files_decrypted");
 
                 filesOld = decryptedFilesOld;
             }

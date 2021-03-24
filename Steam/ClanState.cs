@@ -45,6 +45,7 @@ namespace SteamDatabaseBackend
                     Group = groupName,
                     Avatar = groupAvatar,
                     Url = url,
+                    GroupID = callback.ClanID.AccountID,
                 }));
 
                 Log.WriteInfo(nameof(ClanState), $"{groupName} \"{announcement.Headline}\"");
@@ -77,6 +78,7 @@ namespace SteamDatabaseBackend
                     Group = groupName,
                     Avatar = groupAvatar,
                     Url = link,
+                    GroupID = callback.ClanID.AccountID,
                 }));
 
             }
