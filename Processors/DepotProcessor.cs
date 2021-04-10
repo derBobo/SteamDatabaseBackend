@@ -49,6 +49,7 @@ namespace SteamDatabaseBackend
         private List<CDNClient.Server> CDNServers;
 
         public int DepotLocksCount => DepotLocks.Count;
+        public Dictionary<uint,byte>.KeyCollection DepotLocksKeys => DepotLocks.Keys;
         public DateTime LastServerRefreshTime { get; private set; } = DateTime.Now;
 
         public DepotProcessor(SteamClient client)
@@ -290,15 +291,13 @@ namespace SteamDatabaseBackend
                         await MakeHistory(db, null, request, string.Empty, "manifest_change", dbDepot.ManifestID, request.ManifestID);
                     }
 
+                    if (Settings.Current.OnlyOwnedDepots && !LicenseList.OwnedDepots.ContainsKey(request.DepotID))
+                    {
+                        continue;
+                    }
+
                     lock (DepotLocks)
                     {
-                        // This doesn't really save us from concurrency issues
-                        if (DepotLocks.ContainsKey(request.DepotID))
-                        {
-                            Log.WriteWarn(nameof(DepotProcessor), $"Depot {request.DepotID} was locked in another thread");
-                            continue;
-                        }
-
                         DepotLocks.Add(request.DepotID, 1);
                     }
 
@@ -308,22 +307,15 @@ namespace SteamDatabaseBackend
 
             if (depotsToDownload.Count > 0)
             {
-                _ = TaskManager.Run(async () =>
+                _ = TaskManager.Run(async () => await DownloadDepots(appID, depotsToDownload)).ContinueWith(task =>
                 {
-                    try
-                    {
-                        await DownloadDepots(appID, depotsToDownload);
-                    }
-                    catch (Exception e)
-                    {
-                        ErrorReporter.Notify(nameof(DepotProcessor), e);
-                    }
+                    Log.WriteError(nameof(DepotProcessor), $"An exception occured when processing depots from app {appID}, removing locks");
 
                     foreach (var depot in depotsToDownload)
                     {
                         RemoveLock(depot.DepotID);
                     }
-                });
+                }, TaskContinuationOptions.OnlyOnFaulted);
             }
         }
 
@@ -367,24 +359,21 @@ namespace SteamDatabaseBackend
 
         private async Task DownloadDepots(uint appID, List<ManifestJob> depots)
         {
-            Log.WriteDebug(nameof(DepotProcessor), $"Will process {depots.Count} depots ({DepotLocks.Count} depot locks left)");
+            Log.WriteDebug(nameof(DepotProcessor), $"Will process {depots.Count} depots from app {appID} ({DepotLocks.Count} depot locks left)");
 
-            var processTasks = new List<Task<EResult>>();
+            var processTasks = new List<Task<(uint DepotID, EResult Result)>>();
             var anyFilesDownloaded = false;
             var willDownloadFiles = false;
 
             foreach (var depot in depots)
             {
-                if (Settings.Current.OnlyOwnedDepots && !LicenseList.OwnedDepots.ContainsKey(depot.DepotID))
-                {
-                    continue;
-                }
-
                 if (depot.DepotKey == null)
                 {
                     await GetDepotDecryptionKey(Steam.Instance.Apps, depot, appID);
 
-                    if (depot.DepotKey == null && depot.LastManifestID == depot.ManifestID)
+                    if (depot.DepotKey == null
+                    && depot.LastManifestID == depot.ManifestID
+                    && Settings.FullRun != FullRunState.WithForcedDepots)
                     {
                         RemoveLock(depot.DepotID);
 
@@ -478,26 +467,30 @@ namespace SteamDatabaseBackend
                         ErrorReporter.Notify($"Depot Processor {depot.DepotID}", e);
                     }
 
-                    return result;
+                    return (depot.DepotID, result);
                 });
 
                 processTasks.Add(task);
+            }
+            
+            if (!anyFilesDownloaded && !willDownloadFiles)
+            {
+                foreach (var task in processTasks)
+                {
+                    _ = task.ContinueWith(result =>
+                    {
+                        RemoveLock(result.Result.DepotID);
+                    }, TaskManager.TaskCancellationToken.Token);
+                }
+
+                await Task.WhenAll(processTasks).ConfigureAwait(false);
+
+                return;
             }
 
             await Task.WhenAll(processTasks).ConfigureAwait(false);
 
             Log.WriteDebug(nameof(DepotProcessor), $"{depots.Count} depot downloads finished for app {appID}");
-
-            // TODO: use ContinueWith on tasks
-            if (!anyFilesDownloaded && !willDownloadFiles)
-            {
-                foreach (var depot in depots)
-                {
-                    RemoveLock(depot.DepotID);
-                }
-
-                return;
-            }
 
             lock (UpdateScriptLock)
             {
@@ -520,7 +513,7 @@ namespace SteamDatabaseBackend
                 }
 
                 // Only commit changes if all depots downloaded
-                if (processTasks.All(x => x.Result == EResult.OK || x.Result == EResult.Ignored))
+                if (processTasks.All(x => x.Result.Result == EResult.OK || x.Result.Result == EResult.Ignored))
                 {
                     if (!RunUpdateScriptForApp(appID, depots[0].BuildID))
                     {
@@ -575,7 +568,7 @@ namespace SteamDatabaseBackend
             return RunUpdateScript(updateScript, buildID.ToString());
         }
 
-        private static async Task<EResult> ProcessDepotAfterDownload(ManifestJob request, DepotManifest depotManifest)
+        private static async Task<(uint, EResult)> ProcessDepotAfterDownload(ManifestJob request, DepotManifest depotManifest)
         {
             if (depotManifest.FilenamesEncrypted && request.DepotKey != null)
             {
@@ -588,7 +581,8 @@ namespace SteamDatabaseBackend
 
             var result = await ProcessDepotAfterDownload(db, transaction, request, depotManifest);
             await transaction.CommitAsync();
-            return result;
+
+            return (request.DepotID, result);
         }
 
         private static async Task<EResult> ProcessDepotAfterDownload(IDbConnection db, IDbTransaction transaction, ManifestJob request, DepotManifest depotManifest)
@@ -748,13 +742,14 @@ namespace SteamDatabaseBackend
 
             await db.ExecuteAsync(
                 request.LastManifestID == request.ManifestID ?
-                    "UPDATE `Depots` SET `LastManifestID` = @ManifestID, `FilenamesEncrypted` = @FilenamesEncrypted, `SizeOriginal` = @SizeOriginal, `SizeCompressed` = @SizeCompressed WHERE `DepotID` = @DepotID" :
-                    "UPDATE `Depots` SET `LastManifestID` = @ManifestID, `FilenamesEncrypted` = @FilenamesEncrypted, `SizeOriginal` = @SizeOriginal, `SizeCompressed` = @SizeCompressed, `LastUpdated` = CURRENT_TIMESTAMP() WHERE `DepotID` = @DepotID",
+                    "UPDATE `Depots` SET `LastManifestID` = @ManifestID, `ManifestDate` = @ManifestDate, `FilenamesEncrypted` = @FilenamesEncrypted, `SizeOriginal` = @SizeOriginal, `SizeCompressed` = @SizeCompressed WHERE `DepotID` = @DepotID" :
+                    "UPDATE `Depots` SET `LastManifestID` = @ManifestID, `ManifestDate` = @ManifestDate, `FilenamesEncrypted` = @FilenamesEncrypted, `SizeOriginal` = @SizeOriginal, `SizeCompressed` = @SizeCompressed, `LastUpdated` = CURRENT_TIMESTAMP() WHERE `DepotID` = @DepotID",
                 new
                 {
                     request.DepotID,
                     request.ManifestID,
                     depotManifest.FilenamesEncrypted,
+                    ManifestDate = depotManifest.CreationTime,
                     SizeOriginal = depotManifest.TotalUncompressedSize,
                     SizeCompressed = depotManifest.TotalCompressedSize,
                 }, transaction);

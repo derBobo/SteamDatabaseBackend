@@ -53,10 +53,10 @@ namespace SteamDatabaseBackend
 
             Steam.Instance.RegisterCommandHandlers(commandHandler);
 
+            RssReader = new RSS();
+
             if (Settings.Current.IRC.Enabled)
             {
-                RssReader = new RSS();
-
                 IrcThread = new Thread(IRC.Instance.Connect)
                 {
                     Name = nameof(IRC)
